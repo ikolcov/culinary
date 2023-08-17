@@ -3,6 +3,7 @@ use clap::Parser;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    dotenv::dotenv().ok();
     let config = culinary::config::Config::parse();
 
     let db = sqlx::postgres::PgPoolOptions::new()
