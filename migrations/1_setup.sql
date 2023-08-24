@@ -19,3 +19,5 @@ begin
     EXECUTE FUNCTION set_updated_at();', tablename);
 end;
 $$ language plpgsql;
+
+create collation case_insensitive (provider = icu, locale = 'und-u-ks-level2', deterministic = false);
