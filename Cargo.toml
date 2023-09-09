@@ -7,7 +7,10 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.74"
+axum = { version = "0.6.20", features = ["tower-log"] }
 clap = { version = "4.3.21", features = ["derive", "env"] }
 dotenv = "0.15.0"
+serde = { version = "1.0.188", features = ["derive"] }
 sqlx = { version = "0.7.1", features = ["runtime-tokio-native-tls", "postgres", "uuid", "time"] }
 tokio = { version = "1.31.0", features = ["macros", "rt-multi-thread"] }
+tower-http = { version = "0.4.3", features = ["trace"] }
