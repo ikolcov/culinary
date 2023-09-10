@@ -28,7 +28,7 @@ pub async fn serve(config: Config, db: PgPool) -> anyhow::Result<()> {
         db,
     };
     let router = Router::new()
-        .route("/users", post(create_user))
+        .route("/user", post(create_user).get(get_user))
         .layer(TraceLayer::new_for_http())
         .with_state(api_context);
     let addr = SocketAddr::from((Ipv4Addr::UNSPECIFIED, 8080));
@@ -39,18 +39,21 @@ pub async fn serve(config: Config, db: PgPool) -> anyhow::Result<()> {
 }
 
 #[derive(Deserialize)]
-struct NewUser {
+struct CreateUserRequest {
     email: String,
     password: String,
 }
 
 #[derive(Serialize)]
-struct User {
+struct CreateUserResponse {
     user_id: String,
     email: String,
 }
 
-async fn create_user(ctx: State<ApiContext>, Json(req): Json<NewUser>) -> Result<Json<User>> {
+async fn create_user(
+    ctx: State<ApiContext>,
+    Json(req): Json<CreateUserRequest>,
+) -> Result<Json<CreateUserResponse>> {
     let password_hash = hash_password(req.password).await?;
     let email = req.email;
     let user_id = sqlx::query_scalar!(
@@ -62,7 +65,7 @@ async fn create_user(ctx: State<ApiContext>, Json(req): Json<NewUser>) -> Result
     .await?
     .to_string();
 
-    Ok(Json(User { user_id, email }))
+    Ok(Json(CreateUserResponse { user_id, email }))
 }
 
 async fn hash_password(password: String) -> Result<String> {
@@ -76,4 +79,51 @@ async fn hash_password(password: String) -> Result<String> {
     })
     .await
     .context("panic in generating password hash")?
+}
+
+#[derive(Deserialize)]
+struct GetUserRequest {
+    email: String,
+    password: String,
+}
+
+#[derive(Serialize)]
+struct GetUserResponse {
+    user_id: String,
+    email: String,
+}
+
+async fn get_user(
+    ctx: State<ApiContext>,
+    Json(req): Json<GetUserRequest>,
+) -> Result<Json<GetUserResponse>> {
+    let email = req.email;
+    let user = sqlx::query!(
+        r#"
+            select user_id, email, password_hash 
+            from "user" where email = $1
+        "#,
+        email,
+    )
+    .fetch_optional(&ctx.db)
+    .await?
+    .ok_or_else(|| anyhow::anyhow!("email is not found: {}", email))?;
+
+    verify_password(req.password, user.password_hash).await?;
+
+    let user_id = user.user_id.to_string();
+
+    Ok(Json(GetUserResponse { user_id, email }))
+}
+
+async fn verify_password(password: String, password_hash: String) -> Result<()> {
+    tokio::task::spawn_blocking(move || -> Result<()> {
+        let hash = PasswordHash::new(&password_hash)
+            .map_err(|e| anyhow::anyhow!("invalid password hash: {}", e))?;
+
+        hash.verify_password(&[&Argon2::default()], password)
+            .map_err(|e| anyhow::anyhow!("failed to verify password hash: {}", e).into())
+    })
+    .await
+    .context("panic in verifying password hash")?
 }
